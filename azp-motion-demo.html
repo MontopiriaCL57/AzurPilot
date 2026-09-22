@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AzurPilot 动效体验 Demo · 与 PR 同参数</title>
+<style>
+/* ================== 与 PR 完全一致的动效 tokens ==================
+   时长：120/160/200/260/320ms      缓动：standard/decelerate/emphasized
+   位移：8px（增强档 12px）         位移距离随「力度」按钮切换            */
+:root{
+  --speed: 1;
+  --dur-1: calc(120ms * var(--speed));
+  --dur-2: calc(160ms * var(--speed));
+  --dur-3: calc(200ms * var(--speed));
+  --dur-4: calc(260ms * var(--speed));
+  --dur-5: calc(320ms * var(--speed));
+  --ease-standard: cubic-bezier(.2,0,0,1);
+  --ease-decelerate: cubic-bezier(.22,.61,.36,1);
+  --ease-emphasized: cubic-bezier(.16,1,.3,1);
+  --shift-page: 8px; --shift-page-y: 6px; --shift-entry: 8px;
+  --press-scale: .97; --scale-modal: .97;
+}
+:root[data-strength="strong"]{
+  --shift-page: 12px; --shift-page-y: 9px; --shift-entry: 12px;
+  --dur-4: calc(300ms * var(--speed));
+  --dur-5: calc(380ms * var(--speed));
+  --scale-modal: .95;
+}
+/* 减少动效模拟（与项目全局守卫同口径） */
+:root[data-reduced] *, :root[data-reduced] *::before, :root[data-reduced] *::after{
+  animation: none !important; transition: none !important;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"MiSans","Microsoft YaHei","PingFang SC",system-ui,sans-serif;background:#eef1f7;color:#1d1d1f;-webkit-font-smoothing:antialiased}
+
+/* ---------- 顶部控制台（Demo 专属，非 PR 部分） ---------- */
+.controls{position:sticky;top:0;z-index:900;display:flex;gap:18px;align-items:center;flex-wrap:wrap;
+  padding:10px 18px;background:#0e1830ee;color:#e8eefc;font-size:13px;backdrop-filter:blur(10px)}
+.controls b{font-weight:600;opacity:.85}
+.controls .grp{display:flex;gap:6px;align-items:center}
+.controls button{cursor:pointer;border:1px solid #ffffff2e;background:#ffffff14;color:#e8eefc;border-radius:9px;padding:6px 11px;font-size:12.5px;transition:background-color .15s,transform .12s cubic-bezier(.2,0,0,1)}
+.controls button:active{transform:scale(.95)}
+.controls button.on{background:#4d8dff;border-color:#4d8dff;color:#fff}
+.controls .tip{opacity:.72;margin-left:auto;font-size:12px}
+
+/* ---------- 应用外壳 ---------- */
+.stage{container-type:inline-size;max-width:1440px;margin:14px auto;border-radius:18px;overflow:hidden;
+  box-shadow:0 18px 60px #0d1b3622;background:#fff;transition:max-width .3s cubic-bezier(.22,.61,.36,1)}
+.stage.narrow{max-width:420px}
+.app{display:flex;height:min(780px, calc(100vh - 120px));min-height:520px}
+
+.sidebar{width:236px;flex-shrink:0;background:#fbfcfe;border-right:1px solid #e7eaf1;padding:14px 12px;display:flex;flex-direction:column;gap:2px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:16px;padding:6px 10px 14px}
+.brand .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#4d8dff,#9b8cff);box-shadow:0 4px 14px #4d8dff55}
+.primary-nav{display:flex;flex-direction:column;gap:2px}
+.primary-nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:#3a4256;text-decoration:none;font-size:13.5px;
+  transition:background-color var(--dur-2) var(--ease-standard), color var(--dur-2) var(--ease-standard), transform var(--dur-1) var(--ease-standard)}
+.primary-nav a:hover{background:#eef3fb}
+.primary-nav a:active{transform:scale(.98)}
+.primary-nav a.active{background:#e3efff;color:#0b63d6;font-weight:600}
+.nav-hint{margin-top:auto;font-size:11px;color:#98a2b6;line-height:1.7;padding:10px}
+
+.main-shell{flex:1;min-width:0;display:flex;flex-direction:column;background:#f4f6fa}
+.topbar{position:relative;height:56px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 18px;
+  background:#ffffffd9;border-bottom:1px solid #e7eaf1;overflow:hidden}
+/* 顶栏「光随鼠标」（与 PR 同参数：rAF 写 --mx/--my + 径向渐变） */
+.topbar::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(260px circle at var(--mx,30%) var(--my,30%), #4d8dff26, #4d8dff0d 45%, transparent 70%);
+  opacity:0;transition:opacity var(--dur-4) var(--ease-standard)}
+.topbar:hover::after{opacity:1}
+.topbar>*{position:relative;z-index:1}
+.crumbs{font-size:13px;color:#6b7488;display:flex;gap:8px;align-items:center}
+.crumbs strong{color:#1d1d1f;font-weight:600}
+.grow{flex:1}
+.btn{height:36px;padding:0 16px;border:0;border-radius:18px;background:#0b63d6;color:#fff;font-size:13px;font-weight:600;cursor:pointer;
+  transition:background-color var(--dur-2) var(--ease-standard), transform var(--dur-1) var(--ease-standard), box-shadow var(--dur-2) var(--ease-standard)}
+.btn:hover{background:#0a57bd}
+.btn:active{transform:scale(var(--press-scale))}
+.btn.ghost{background:#fff;color:#33405c;border:1px solid #d7ddea}
+.iconbtn{width:34px;height:34px;border-radius:10px;border:0;background:transparent;font-size:16px;cursor:pointer;color:#49536b;
+  transition:background-color var(--dur-2) var(--ease-standard), transform var(--dur-1) var(--ease-standard)}
+.iconbtn:hover{background:#eef3fb}
+.iconbtn:active{transform:scale(var(--press-scale))}
+.mobile-toggle,.rail-toggle{display:none}
+
+main#main{flex:1;overflow:auto;padding:24px 26px;position:relative}
+/* ============ 页面转场（与 PR 一致：方向 + 位移 + 时长） ============ */
+@keyframes page-forward{from{opacity:0;transform:translateX(var(--shift-page))}to{opacity:1;transform:none}}
+@keyframes page-back{from{opacity:0;transform:translateX(calc(-1 * var(--shift-page)))}to{opacity:1;transform:none}}
+@keyframes page-fade{from{opacity:0;transform:translateY(var(--shift-page-y))}to{opacity:1;transform:none}}
+main.motion-nav-forward{animation:page-forward var(--dur-5) var(--ease-emphasized) both}
+main.motion-nav-back{animation:page-back var(--dur-5) var(--ease-emphasized) both}
+main.motion-nav-fade{animation:page-fade var(--dur-4) var(--ease-decelerate) both}
+
+/* ============ 列表/卡片错峰入场（40ms 步进） ============ */
+@keyframes fade-up{from{opacity:0;transform:translateY(var(--shift-entry))}to{opacity:1;transform:none}}
+.stagger>*{animation:fade-up var(--dur-4) var(--ease-decelerate) both}
+.stagger>*:nth-child(1){animation-delay:calc(40ms * var(--speed))}
+.stagger>*:nth-child(2){animation-delay:calc(80ms * var(--speed))}
+.stagger>*:nth-child(3){animation-delay:calc(120ms * var(--speed))}
+.stagger>*:nth-child(4){animation-delay:calc(160ms * var(--speed))}
+.stagger>*:nth-child(5){animation-delay:calc(200ms * var(--speed))}
+.stagger>*:nth-child(6){animation-delay:calc(240ms * var(--speed))}
+.stagger>*:nth-child(7){animation-delay:calc(280ms * var(--speed))}
+.stagger>*:nth-child(8){animation-delay:calc(320ms * var(--speed))}
+
+/* ---------- 页面内容 ---------- */
+h2{margin:0 0 18px;font-size:22px;letter-spacing:-.4px}
+.deck{display:grid;grid-template-columns:minmax(280px,38%) 1fr;gap:0;margin:-24px -26px;min-height:100%}
+.deck .hero{position:relative;color:#fff;padding:34px;display:flex;flex-direction:column;justify-content:center;
+  background:
+   radial-gradient(420px 260px at 80% 12%, #ffb3d9aa, transparent 62%),
+   radial-gradient(360px 300px at 18% 86%, #7cc7ffb0, transparent 60%),
+   linear-gradient(150deg,#5984e8,#a06cf0 55%,#e08bbf)}
+.deck .hero::after{content:"";position:absolute;inset:0;background:linear-gradient(168deg,#0000004d,#00000000 40%,#00000040)}
+.deck .hero>*{position:relative;z-index:1}
+.deck .eyebrow{font-size:12px;letter-spacing:.14em;opacity:.85;margin:0 0 10px}
+.deck h1{margin:0 0 12px;font-size:34px;line-height:1.25;text-shadow:0 2px 18px #0006}
+.deck .sub{font-size:13px;line-height:1.8;opacity:.9;margin:0}
+.deck .stats{display:flex;gap:26px;margin:26px 0 0;font-size:13px}
+.deck .stats b{display:block;font-size:22px;margin-top:2px}
+.deck .grid-area{padding:30px 32px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(225px,1fr));gap:16px}
+.card{background:#fff;border:1px solid #e9ecf3;border-radius:16px;padding:18px;box-shadow:0 6px 22px #0d1b360f;cursor:pointer;text-decoration:none;color:inherit;display:block;
+  transition:box-shadow var(--dur-3) var(--ease-standard), transform var(--dur-3) var(--ease-decelerate), border-color var(--dur-3) var(--ease-standard)}
+:root[data-strength="strong"] .card:hover{transform:translateY(-4px)}
+.card:hover{transform:translateY(-2px);box-shadow:0 12px 34px #0d1b3622;border-color:#cdd9ee}
+.card:active{transform:scale(.99)}
+.card h3{margin:14px 0 8px;font-size:17px}
+.card .meta{font-size:12px;color:#7c8698}
+.badge{float:right;font-size:11px;padding:3px 9px;border-radius:999px}
+.badge.run{background:#e5f6ec;color:#177a41}.badge.wait{background:#f1f3f7;color:#5d6777}.badge.err{background:#fdeaea;color:#c0392b}
+
+.panelrow{display:flex;gap:16px;align-items:flex-start}
+.panel{flex:1;min-width:0;background:#fff;border:1px solid #e9ecf3;border-radius:16px;padding:18px}
+.res-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.res{background:#fff;border:1px solid #e9ecf3;border-radius:13px;padding:12px 14px}
+.res span{font-size:12px;color:#7c8698}
+.res b{display:block;font-size:21px;margin-top:6px;font-variant-numeric:tabular-nums}
+.log{background:#0d1424;color:#c7d2e4;border-radius:13px;padding:14px 16px;font-family:Consolas,ui-monospace,monospace;font-size:12px;line-height:1.9;height:230px;overflow:auto}
+.log .line{opacity:0;animation:log-in var(--dur-2) var(--ease-decelerate) both}
+@keyframes log-in{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
+.log .lv{color:#6ea8ff}
+
+/* ---------- 右栏（宽屏常驻 / 窄屏滑入） ---------- */
+.rail{width:284px;flex-shrink:0;background:#fbfcfe;border-left:1px solid #e7eaf1;padding:16px;overflow:auto}
+.rail h4{margin:2px 0 12px;font-size:13px;color:#6b7488;font-weight:600}
+.rail .item{background:#fff;border:1px solid #e9ecf3;border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:13px}
+
+/* ---------- 弹窗（同缩放参数） ---------- */
+.overlay{position:fixed;inset:0;background:#101d3730;opacity:0;pointer-events:none;transition:opacity var(--dur-3) var(--ease-standard);z-index:1000}
+.overlay.open{opacity:1;pointer-events:auto}
+.dialog{position:fixed;inset:0;display:grid;place-items:center;pointer-events:none;z-index:1001}
+.dialog .dpanel{width:430px;max-width:92vw;background:#fff;border-radius:18px;padding:22px 24px;box-shadow:0 26px 90px #132b4838;
+  opacity:0;transform:translateY(6px) scale(var(--scale-modal));
+  transition:opacity var(--dur-3) var(--ease-emphasized), transform var(--dur-3) var(--ease-emphasized)}
+.dialog.open{pointer-events:auto}
+.dialog.open .dpanel{opacity:1;transform:none}
+.dpanel h3{margin:0 0 6px;font-size:17px}
+.dpanel p{margin:0 0 14px;color:#7c8698;font-size:12.5px;line-height:1.7}
+.dpanel label{display:block;font-size:12.5px;color:#4a5568;margin:10px 0 4px}
+.dpanel input{width:100%;height:38px;border:1px solid #d7ddea;border-radius:10px;padding:0 12px;font-size:13.5px;transition:border-color var(--dur-2),box-shadow var(--dur-2)}
+.dpanel input:focus{outline:none;border-color:#0b63d6;box-shadow:0 0 0 3px #0b63d622}
+.dpanel .row{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+
+/* ---------- 窄屏（容器查询：拖窄或点「窄屏模拟」触发） ---------- */
+@container (max-width: 950px){
+  .sidebar{position:absolute;top:56px;bottom:0;left:0;z-index:200;box-shadow:24px 0 60px #0d1b3624;
+    transform:translateX(-105%);visibility:hidden;
+    transition:transform var(--dur-4) var(--ease-decelerate), visibility var(--dur-4) allow-discrete}
+  .app.mobile-open .sidebar{transform:none;visibility:visible}
+  .mobile-toggle{display:inline-flex}
+  .rail{position:absolute;top:56px;bottom:0;right:0;z-index:210;width:min(300px,86%);box-shadow:-24px 0 60px #0d1b3624;
+    opacity:0;visibility:hidden;transform:translateX(100%);
+    transition:transform var(--dur-4) var(--ease-decelerate), opacity var(--dur-4) var(--ease-standard), visibility var(--dur-4) allow-discrete}
+  .app.rail-open .rail{transform:none;opacity:1;visibility:visible}
+  .rail-toggle{display:inline-flex}
+  .deck{grid-template-columns:1fr}
+  .deck .hero{min-height:220px}
+  .deck .grid-area{padding:20px 18px}
+}
+.app{position:relative}
+footer.parity{max-width:1440px;margin:10px auto 30px;padding:0 8px;font-size:12px;color:#7a8496;line-height:1.8}
+footer.parity code{background:#e8edf6;border-radius:6px;padding:1px 6px}
+</style>
+
+<body>
+<div class="controls">
+  <b>⚡ 动效体验台</b>
+  <span class="grp">速度
+    <button id="sp1" class="on">正常 1×</button>
+    <button id="sp2">慢放 0.5×</button>
+    <button id="sp3">慢放 0.3×</button>
+  </span>
+  <span class="grp">力度
+    <button id="st-a" class="on">克制版（PR 默认）</button>
+    <button id="st-b">增强版</button>
+  </span>
+  <span class="grp">视图
+    <button id="vw-wide" class="on">全宽</button>
+    <button id="vw-narrow">窄屏模拟（出抽屉/右栏）</button>
+  </span>
+  <span class="grp">
+    <button id="red-toggle">减少动效 关</button>
+  </span>
+  <span class="tip">点侧栏 / 点卡片 / 点「新建实例」 / 查看日志逐条浮现</span>
+</div>
+
+<div class="stage" id="stage">
+<div class="app" id="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="mark"></span>AzurPilot <span style="font-size:11px;background:#ffe3e3;color:#c0392b;border-radius:6px;padding:2px 6px;">Demo</span></div>
+    <nav class="primary-nav" id="nav">
+      <a href="#/home" data-path="/home">🏠 主页</a>
+      <a href="#/updater" data-path="/updater">⬇️ 更新器</a>
+      <a href="#/settings" data-path="/settings">🎨 界面设置</a>
+      <a href="#/i/demo/overview" data-path="/i/demo/overview">📊 运行总览（实例）</a>
+      <a href="#/i/demo/statistics" data-path="/i/demo/statistics">📈 资源统计（实例）</a>
+    </nav>
+    <div class="nav-hint">提示：进入实例两页之间切换看<b>方向感</b>；返回主页看<b>反向</b>转场。</div>
+  </aside>
+
+  <div class="main-shell">
+    <header class="topbar" id="topbar">
+      <button class="iconbtn mobile-toggle" id="mtoggle" title="菜单">☰</button>
+      <div class="crumbs" id="crumbs">主页</div>
+      <span class="grow"></span>
+      <button class="btn ghost rail-toggle" id="rtoggle">调度器</button>
+      <button class="btn" id="newbtn">＋ 新建实例</button>
+    </header>
+    <main id="main"></main>
+  </div>
+
+  <aside class="rail" id="rail">
+    <h4>调度器</h4>
+    <div class="item">运行中 0 · 待运行 4 · 等待中 2</div>
+    <div class="item">下一次运行：委托 · 10:18</div>
+    <h4>任务计划</h4>
+    <div class="item">重启设置 · 待运行</div>
+    <div class="item">科研 · 待运行</div>
+    <div class="item">收获 · 待运行</div>
+  </aside>
+</div>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="dialog" id="dialog">
+  <div class="dpanel">
+    <h3>新建实例</h3>
+    <p>弹窗入场：背板渐暗 + 面板从 <b>0.97 缩放</b> 浮现（与 PR 参数一致）。</p>
+    <label>实例名称</label><input id="iname" value="demo-new" />
+    <label>初始配置</label><input value="default" />
+    <div class="row">
+      <button class="btn ghost" id="dcancel">取消</button>
+      <button class="btn" onclick="closeModal()">创建实例</button>
+    </div>
+  </div>
+</div>
+
+<footer class="parity">
+  ⚙️ 本 Demo 与 PR 使用<b>完全相同的动效参数</b>：时长 <code>120/160/200/260/320ms</code> ·
+  缓动 <code>cubic-bezier(.2,0,0,1) / (.22,.61,.36,1) / (.16,1,.3,1)</code> ·
+  位移 <code>±8px</code>（增强档 ±12px）· 按压 <code>scale(.97)</code> · 弹窗 <code>scale(.97→1)</code>。
+  内容为演示占位，不代表项目真实数据。
+</footer>
+
+<script>
+/* ============ 迷你路由（复刻 usePageMotion 的方向判定） ============ */
+const main = document.getElementById('main');
+const crumbs = document.getElementById('crumbs');
+const nav = document.getElementById('nav');
+const app = document.getElementById('app');
+const NAV_ORDER = ['/home', '/updater', '/settings'];
+const INST_ORDER = ['/overview', '/statistics'];
+let prevPath = null;
+let timer = null;
+let logTimer = null;
+
+function depth(p){ return p.split('/').filter(Boolean).length; }
+function dirIndex(p, order){ return order.findIndex(x => p.endsWith(x)); }
+function routeDirection(from, to){
+  const df = depth(from), dt = depth(to);
+  if (dt > df) return 'forward';
+  if (dt < df) return 'back';
+  const a = NAV_ORDER.indexOf(from), b = NAV_ORDER.indexOf(to);
+  if (a >= 0 && b >= 0 && a !== b) return b > a ? 'forward' : 'back';
+  const c = dirIndex(from, INST_ORDER), d = dirIndex(to, INST_ORDER);
+  if (c >= 0 && d >= 0 && c !== d) return d > c ? 'forward' : 'back';
+  return 'fade';
+}
+function speed(){ return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--speed')) || 1; }
+
+function render(path){
+  const reduced = document.documentElement.hasAttribute('data-reduced');
+  if (prevPath !== null && prevPath !== path && !reduced){
+    const cls = 'motion-nav-' + routeDirection(prevPath, path);
+    main.classList.remove('motion-nav-forward','motion-nav-back','motion-nav-fade');
+    void main.offsetWidth;
+    main.classList.add(cls);
+    clearTimeout(timer);
+    timer = setTimeout(() => main.classList.remove(cls), 480 * speed());
+  }
+  prevPath = path;
+  clearInterval(logTimer);
+  if (path === '/home'){ main.innerHTML = tplHome(); crumbs.innerHTML = '主页'; }
+  else if (path === '/updater'){ main.innerHTML = tplList('更新器','本地 HEAD · 上游 HEAD · 提交记录（演示占位）'); crumbs.innerHTML = '主页 / 更新器'; }
+  else if (path === '/settings'){ main.innerHTML = tplList('界面设置','主题 · 配色 · 动效档位（演示占位）'); crumbs.innerHTML = '主页 / 界面设置'; }
+  else if (path.endsWith('/overview')){ main.innerHTML = tplOverview(); crumbs.innerHTML = '主页 / demo-main / 运行总览'; startLogs(); }
+  else if (path.endsWith('/statistics')){ main.innerHTML = tplStats(); crumbs.innerHTML = '主页 / demo-main / 资源统计'; }
+  // 侧栏高亮
+  nav.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.path === path));
+  app.classList.remove('mobile-open','rail-open');
+}
+function go(path){ if (location.hash !== '#' + path) location.hash = '#' + path; else render(path); }
+window.addEventListener('hashchange', () => render(location.hash.slice(1) || '/home'));
+
+/* ---------- 页面模板 ---------- */
+function tplHome(){
+  return `
+  <div class="deck">
+    <div class="hero stagger">
+      <p class="eyebrow">你的指挥中心</p>
+      <h1>早上好，<br>指挥官！</h1>
+      <p class="sub">每一次出航，都井然有序。所有实例与任务，尽在掌握。<br><br>← 本页三块内容（文字/统计/卡片）正在依次浮现</p>
+      <div class="stats"><span>全部实例<b>3</b></span><span>运行中<b>1</b></span><span>需要处理<b>1</b></span></div>
+    </div>
+    <div class="grid-area">
+      <h2>实例</h2>
+      <div class="grid stagger">
+        <a class="card" href="#/i/demo/overview"><span class="badge run">运行中</span><h3>demo-main</h3><div class="meta">127.0.0.1:5555 · 委托</div></a>
+        <a class="card" href="#/i/demo/overview"><span class="badge wait">待命中</span><h3>demo-alt</h3><div class="meta">127.0.0.1:5557 · 未运行</div></a>
+        <a class="card" href="#/i/demo/overview"><span class="badge err">需要处理</span><h3>demo-error</h3><div class="meta">127.0.0.1:5559</div></a>
+      </div>
+    </div>
+  </div>`;
+}
+function tplList(title, desc){
+  return `<h2>${title}</h2><div class="panelrow stagger">
+    <div class="panel"><b>${desc}</b><p style="color:#7c8698;font-size:12.5px;line-height:1.9">切换到此页时整页从右侧轻滑 + 淡入（前进方向）；返回时从左滑回。<br>用顶部「慢放」把 0.3 秒的动作拉成 1 秒再看一遍。</p></div>
+    <div class="panel" style="max-width:320px"><b>占位面板</b><p style="color:#7c8698;font-size:12.5px">列表 / 表单 / 图表区域</p></div>
+  </div>`;
+}
+function tplOverview(){
+  return `<div class="panelrow stagger">
+    <div style="flex:1;min-width:0">
+      <div class="res-grid">
+        <div class="res"><span>石油</span><b>3,934</b></div>
+        <div class="res"><span>物资</span><b>98,291</b></div>
+        <div class="res"><span>钻石</span><b>4,821</b></div>
+        <div class="res"><span>行动力</span><b>164</b></div>
+      </div>
+      <div class="panel" style="margin-top:16px"><b>日志（新行逐条淡入）</b>
+        <div class="log" id="log" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </div>
+  <p style="color:#7c8698;font-size:12px;margin-top:14px">↖ 回到主页看点「返回」的<b>反向转场</b>；窄屏模式下点右上「调度器」看<b>右栏滑入</b>。</p>`;
+}
+function tplStats(){
+  return `<h2>资源统计</h2><div class="res-grid stagger">
+    <div class="res"><span>资源趋势</span><b>↗ +6.2%</b></div>
+    <div class="res"><span>大世界</span><b>-2.1%</b></div>
+    <div class="res"><span>委托收益</span><b>↗ +3.8%</b></div>
+    <div class="res"><span>舰船经验</span><b>+1.4%</b></div>
+  </div>
+  <div class="panel" style="margin-top:16px;height:180px;display:grid;place-items:center;color:#98a2b6">图表占位（演示）<br><small>注意本页是从「运行总览」横向滑入的</small></div>`;
+}
+
+/* ---------- 日志逐条浮现 ---------- */
+const LOG_LINES = ['[INFO] 任务计划已加载 (21 项)','[INFO] 智能调度Plus · 待运行','[INFO] 启动调度器…','[INFO] [设备-控制] 滑动 (897,397) → (904,376)','[INFO] [大世界-解谜] 策略搜索确认','[OK] 委托 · 已加入等待队列','[INFO] [自动提交] 开启','[INFO] 收获 · 等待中','[INFO] 科研 · 等待中'];
+let logIdx = 0;
+function startLogs(){
+  const box = document.getElementById('log');
+  if (!box) return;
+  box.innerHTML = '';
+  logIdx = 0;
+  const push = () => {
+    if (!document.body.contains(box)) { clearInterval(logTimer); return; }
+    const div = document.createElement('div');
+    div.className = 'line';
+    div.innerHTML = `<span class="lv">${LOG_LINES[logIdx % LOG_LINES.length].split(' ')[0]}</span> ${LOG_LINES[logIdx % LOG_LINES.length].split(' ').slice(1).join(' ')}`;
+    box.appendChild(div);
+    if (box.childNodes.length > 40) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+    logIdx++;
+  };
+  push();
+  logTimer = setInterval(push, 900 * speed());
+}
+
+/* ---------- 弹窗 ---------- */
+const overlay = document.getElementById('overlay');
+const dialog = document.getElementById('dialog');
+function openModal(){ overlay.classList.add('open'); dialog.classList.add('open'); }
+function closeModal(){ overlay.classList.remove('open'); dialog.classList.remove('open'); }
+document.getElementById('newbtn').addEventListener('click', openModal);
+document.getElementById('dcancel').addEventListener('click', closeModal);
+overlay.addEventListener('click', closeModal);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ---------- 顶栏光随鼠标（rAF 合帧，不触发重排） ---------- */
+const topbar = document.getElementById('topbar');
+let raf = 0, px = .5, py = .3;
+topbar.addEventListener('pointermove', e => {
+  const r = topbar.getBoundingClientRect();
+  px = (e.clientX - r.left) / r.width; py = (e.clientY - r.top) / r.height;
+  if (!raf) raf = requestAnimationFrame(() => {
+    raf = 0;
+    topbar.style.setProperty('--mx', (px*100).toFixed(1) + '%');
+    topbar.style.setProperty('--my', (py*100).toFixed(1) + '%');
+  });
+}, {passive: true});
+
+/* ---------- 窄屏抽屉 / 右栏 ---------- */
+document.getElementById('mtoggle').addEventListener('click', () => app.classList.toggle('mobile-open'));
+document.getElementById('rtoggle').addEventListener('click', () => app.classList.toggle('rail-open'));
+
+/* ---------- 控制台按钮 ---------- */
+function setPair(onA, onB, active){ onA.classList.toggle('on', active === 'a'); onB.classList.toggle('on', active === 'b'); }
+const sp = [document.getElementById('sp1'), document.getElementById('sp2'), document.getElementById('sp3')];
+const speeds = [1, 2, 3.333];
+sp.forEach((b, i) => b.addEventListener('click', () => {
+  document.documentElement.style.setProperty('--speed', speeds[i]);
+  sp.forEach(x => x.classList.remove('on')); b.classList.add('on');
+}));
+const sta = document.getElementById('st-a'), stb = document.getElementById('st-b');
+sta.addEventListener('click', () => { document.documentElement.removeAttribute('data-strength'); setPair(sta, stb, 'a'); });
+stb.addEventListener('click', () => { document.documentElement.setAttribute('data-strength', 'strong'); setPair(sta, stb, 'b'); });
+const vww = document.getElementById('vw-wide'), vwn = document.getElementById('vw-narrow');
+vww.addEventListener('click', () => { document.getElementById('stage').classList.remove('narrow'); setPair(vww, vwn, 'a'); });
+vwn.addEventListener('click', () => { document.getElementById('stage').classList.add('narrow'); setPair(vww, vwn, 'b'); });
+const red = document.getElementById('red-toggle');
+red.addEventListener('click', () => {
+  const on = document.documentElement.hasAttribute('data-reduced');
+  if (on){ document.documentElement.removeAttribute('data-reduced'); red.textContent = '减少动效 关'; }
+  else { document.documentElement.setAttribute('data-reduced',''); red.textContent = '减少动效 开'; }
+});
+
+/* boot */
+render(location.hash.slice(1) || '/home');
+</script>
+</body>
+</html>
